@@ -1,19 +1,16 @@
 import masp as srs
 import numpy as np
 import soundfile as sf
-from IPython.display import Audio
 import scipy
 import copy
 import pandas as pd
 import os
 from os.path import join as pjoin
 from multiprocessing import Pool
-import matplotlib.pyplot as plt
 import mat73
-#import tqdm
-import librosa as lsa
 import scipy.signal as sig
 from multiprocessing import Pool
+import argparse 
 
 def load_speechdirectivity(path, plot):
     dirdata = scipy.io.loadmat(path)['azel_dir']
@@ -175,90 +172,91 @@ def apply_directivity(echograms, recip_echograms, sourceOrient, d, band_centerfr
 # This script encapsulated in a method for multi-processing takes a dataframe row and stores the audio on disk
 # a = df.iloc[i]
 def process(a):
-    try:
-        headC = np.array([a.headC_x, a.headC_y, a.headC_z])
-        headOrient = np.array([a.headOrient_azi, a.headOrient_ele])
-        src = np.array([[a.src_x, a.src_y, a.src_z]])
-        srcOrient = np.array([a.srcOrient_azi, a.srcOrient_ele])
-        room = np.array([a.room_x, a.room_y, a.room_z])
-        
-        rt60 = np.array([a.rt60_avg])
-        
-        rt60s = np.array([a.rt60_125Hz, a.rt60_250Hz, a.rt60_500Hz, a.rt60_1000Hz, a.rt60_2000Hz, a.rt60_4000Hz])
-        speech, fs_speech = lsa.load('ane_speech.wav', sr=fs_rir)
+    #try:
+    headC = np.array([a.headC_x, a.headC_y, a.headC_z])
+    headOrient = np.array([a.headOrient_azi, a.headOrient_ele])
+    src = np.array([[a.src_x, a.src_y, a.src_z]])
+    srcOrient = np.array([a.srcOrient_azi, a.srcOrient_ele])
+    room = np.array([a.room_x, a.room_y, a.room_z])
     
-        mic = np.array(head_2_ku_ears(headC,headOrient)) # we get BiMagLS mic points 
-        mic = np.vstack((mic, headC)) # we add the head center microphone for non binaural decoders
-        nRec = mic.shape[0]
-        nSrc = src.shape[0]
-        
-        abs_walls,_ = srs.find_abs_coeffs_from_rt(room, rt60s)
-        
-        abs_walls_single, _ = srs.find_abs_coeffs_from_rt(room, rt60)
-        
-        limits_single = np.minimum(rt60, maxlim)
-        
-        limits = np.minimum(rt60s, maxlim)
-        
-        echograms_single = srs.compute_echograms_mic(room, src, np.array([mic[2]]), abs_walls_single, limits_single, np.array([[1,0,0,1]]))
-        echograms_mb = srs.compute_echograms_mic(room, src, np.array([mic[2]]), abs_walls, limits, np.array([[1,0,0,1]]))
-        echograms  = srs.compute_echograms_sh(room, src, mic[0:2], abs_walls, limits, ambi_order, headOrient)
-        recip_echograms  = srs.compute_echograms_sh(room, mic[0:2], src, abs_walls, limits, ambi_order, headOrient)
-        
-        mic_rirs_single = srs.render_rirs_mic(echograms_single, np.array([1000]), fs_rir)
-        
-        mic_rirs_mb = srs.render_rirs_mic(echograms_mb, band_centerfreqs, fs_rir)
-        
-        recdir_rirs = srs.render_rirs_sh(echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
-        
-        directivity_echograms = apply_directivity(echograms, recip_echograms, srcOrient, d, band_centerfreqs)
-        
-        recsrcdir_rirs = srs.render_rirs_sh(echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
-        
-        bin_ir_recdir = np.array([sig.fftconvolve(np.squeeze(recdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
-                        sig.fftconvolve(np.squeeze(recdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
-        
-        bin_ir_recsrcdir = np.array([sig.fftconvolve(np.squeeze(recsrcdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
-                        sig.fftconvolve(np.squeeze(recsrcdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
-        
-        single_max = np.max(np.abs(mic_rirs_single))
-        
-        mb_max = np.max(np.abs(mic_rirs_mb))
-        
-        recdir_max = np.max(np.abs(bin_ir_recdir))
-        
-        recsrcdir_max = np.max(np.abs(bin_ir_recsrcdir))
-        
-        oallmax = np.max((single_max, mb_max, recdir_max, recsrcdir_max))
-        
-        if oallmax >= 1.:
-            oallmax = 0.95
-        
-        mic_rirs_single /= single_max
-        mic_rirs_single *= oallmax
-        mic_rirs_mb /= mb_max
-        mic_rirs_mb *= oallmax
-        bin_ir_recdir /= recdir_max
-        bin_ir_recdir *= oallmax
-        bin_ir_recsrcdir /= recsrcdir_max
-        bin_ir_recsrcdir *= oallmax
+    rt60 = np.array([a.rt60_avg])
+    
+    rt60s = np.array([a.rt60_125Hz, a.rt60_250Hz, a.rt60_500Hz, a.rt60_1000Hz, a.rt60_2000Hz, a.rt60_4000Hz])
+    #speech, fs_speech = lsa.load('ane_speech.wav', sr=fs_rir)
 
-        sing_path = pjoin(pjoin(pjoin(output_path, a.set), 'singleband'), "{:05d}".format(a.id) + '.wav')
-        mb_path = pjoin(pjoin(pjoin(output_path, a.set), 'multiband'), "{:05d}".format(a.id) + '.wav')
-        recleft_path = pjoin(pjoin(pjoin(output_path, a.set), 'recdirectivity_left'), "{:05d}".format(a.id) + '.wav')
-        recright_path = pjoin(pjoin(pjoin(output_path, a.set), 'recdirectivity_right'), "{:05d}".format(a.id) + '.wav')
-        recsrcleft_path = pjoin(pjoin(pjoin(output_path, a.set), 'recsourcedirectivity_left'), "{:05d}".format(a.id) + '.wav')
-        recsrcright_path = pjoin(pjoin(pjoin(output_path, a.set), 'recsourcedirectivity_right'), "{:05d}".format(a.id) + '.wav')
+    mic = np.array(head_2_ku_ears(headC,headOrient)) # we get BiMagLS mic points 
+    mic = np.vstack((mic, headC)) # we add the head center microphone for non binaural decoders
+    nRec = mic.shape[0]
+    nSrc = src.shape[0]
+    
+    abs_walls,_ = srs.find_abs_coeffs_from_rt(room, rt60s)
+    
+    abs_walls_single, _ = srs.find_abs_coeffs_from_rt(room, rt60)
+    
+    limits_single = np.minimum(rt60, maxlim)
+    
+    limits = np.minimum(rt60s, maxlim)
+    
+    echograms_single = srs.compute_echograms_mic(room, src, np.array([mic[2]]), abs_walls_single, limits_single, np.array([[1,0,0,1]]))
+    echograms_mb = srs.compute_echograms_mic(room, src, np.array([mic[2]]), abs_walls, limits, np.array([[1,0,0,1]]))
+    echograms  = srs.compute_echograms_sh(room, src, mic[0:2], abs_walls, limits, ambi_order, headOrient)
+    recip_echograms  = srs.compute_echograms_sh(room, mic[0:2], src, abs_walls, limits, ambi_order, headOrient)
+    
+    mic_rirs_single = srs.render_rirs_mic(echograms_single, np.array([1000]), fs_rir)
+    
+    mic_rirs_mb = srs.render_rirs_mic(echograms_mb, band_centerfreqs, fs_rir)
+    
+    recdir_rirs = srs.render_rirs_sh(echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
+    
+    directivity_echograms = apply_directivity(echograms, recip_echograms, srcOrient, d, band_centerfreqs)
+    
+    recsrcdir_rirs = srs.render_rirs_sh(echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
+    
+    bin_ir_recdir = np.array([sig.fftconvolve(np.squeeze(recdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
+                    sig.fftconvolve(np.squeeze(recdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
+    
+    bin_ir_recsrcdir = np.array([sig.fftconvolve(np.squeeze(recsrcdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
+                    sig.fftconvolve(np.squeeze(recsrcdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
+    
+    single_max = np.max(np.abs(mic_rirs_single))
+    
+    mb_max = np.max(np.abs(mic_rirs_mb))
+    
+    recdir_max = np.max(np.abs(bin_ir_recdir))
+    
+    recsrcdir_max = np.max(np.abs(bin_ir_recsrcdir))
+    
+    oallmax = np.max((single_max, mb_max, recdir_max, recsrcdir_max))
+    
+    if oallmax >= 1.:
+        oallmax = 0.95
+    
+    mic_rirs_single /= single_max
+    mic_rirs_single *= oallmax
+    mic_rirs_mb /= mb_max
+    mic_rirs_mb *= oallmax
+    bin_ir_recdir /= recdir_max
+    bin_ir_recdir *= oallmax
+    bin_ir_recsrcdir /= recsrcdir_max
+    bin_ir_recsrcdir *= oallmax
 
-        sf.write(sing_path, mic_rirs_single[:,0,0], fs_rir, subtype='FLOAT')   
-        sf.write(mb_path, mic_rirs_mb[:,0,0], fs_rir, subtype='FLOAT')    
-        sf.write(recleft_path, bin_ir_recdir[0], fs_rir, subtype='FLOAT')    
-        sf.write(recright_path, bin_ir_recdir[1], fs_rir, subtype='FLOAT')    
-        sf.write(recsrcleft_path, bin_ir_recsrcdir[0], fs_rir, subtype='FLOAT')    
-        sf.write(recsrcright_path, bin_ir_recsrcdir[1], fs_rir, subtype='FLOAT')    
+    sing_path = pjoin(pjoin(pjoin(output_path, a.set), 'singleband'), "{:05d}".format(a.id) + '.wav')
+    mb_path = pjoin(pjoin(pjoin(output_path, a.set), 'multiband'), "{:05d}".format(a.id) + '.wav')
+    recleft_path = pjoin(pjoin(pjoin(output_path, a.set), 'recdirectivity_left'), "{:05d}".format(a.id) + '.wav')
+    recright_path = pjoin(pjoin(pjoin(output_path, a.set), 'recdirectivity_right'), "{:05d}".format(a.id) + '.wav')
+    recsrcleft_path = pjoin(pjoin(pjoin(output_path, a.set), 'recsourcedirectivity_left'), "{:05d}".format(a.id) + '.wav')
+    recsrcright_path = pjoin(pjoin(pjoin(output_path, a.set), 'recsourcedirectivity_right'), "{:05d}".format(a.id) + '.wav')
 
-    except:
-        print('ERROR when processing ' + str(a.idx))
+    sf.write(sing_path, mic_rirs_single[:,0,0], fs_rir, subtype='FLOAT')   
+    sf.write(mb_path, mic_rirs_mb[:,0,0], fs_rir, subtype='FLOAT')    
+    sf.write(recleft_path, bin_ir_recdir[0], fs_rir, subtype='FLOAT')    
+    sf.write(recright_path, bin_ir_recdir[1], fs_rir, subtype='FLOAT')    
+    sf.write(recsrcleft_path, bin_ir_recsrcdir[0], fs_rir, subtype='FLOAT')    
+    sf.write(recsrcright_path, bin_ir_recsrcdir[1], fs_rir, subtype='FLOAT')    
+
+    print('File '+str(a.id)+ ' done.')
+    #except:
+    #    print('ERROR when processing ' + str(a.id))
 
 if __name__ == '__main__':
 
@@ -270,8 +268,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     print('RIR dataset generation script. Interspeech2024')
-    num_workers = 8 # number of CPU cores
-    output_path = args.output_path #'/home/ubuntu/Data/microson_v1/'
+    num_workers = 1 # number of CPU cores
+    output_path = args.output #'/home/ubuntu/Data/microson_v1/'
     d = load_speechdirectivity(path=pjoin('directivity_parsing_matlab', 'azel_dir.mat'), plot=False)
     band_centerfreqs = np.zeros((6))
     band_centerfreqs[0] = 125
@@ -302,7 +300,7 @@ if __name__ == '__main__':
         if not os.path.exists(pjoin(pjoin(output_path, subset), 'recdirectivity_left')):
             os.makedirs(pjoin(pjoin(output_path, subset), 'recdirectivity_left'))
         if not os.path.exists(pjoin(pjoin(output_path, subset), 'recdirectivity_right')):
-            os.makedirs(pjoin(pjoin(output_path, subset), 'recdirectivity_left'))
+            os.makedirs(pjoin(pjoin(output_path, subset), 'recdirectivity_right'))
         if not os.path.exists(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_left')):
             os.makedirs(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_left'))
         if not os.path.exists(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_right')):
@@ -319,5 +317,5 @@ if __name__ == '__main__':
     #unprocessed_files = df[~df['speech_path'].isin(processed_files)]
     #for i in range(len(unprocessed_files)):
     #     process(unprocessed_files.iloc[i])
-    
+    print(' ')
     print('All files processed. Done.')
