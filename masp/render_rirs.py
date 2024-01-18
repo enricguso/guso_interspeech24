@@ -128,8 +128,8 @@ def render_rirs_array(echograms, band_centerfreqs, fs, grids, array_irs):
         array_rirs[nr] = np.zeros((L_rir + L_fbank + L_resp - 1, nMics, nSrc))
 
         for ns in range(nSrc):
-            print('Rendering echogram: Source ' + str(ns) + ' - Receiver ' + str(nr) )
-            print('      Quantize echograms to receiver grid')
+            #print('Rendering echogram: Source ' + str(ns) + ' - Receiver ' + str(nr) )
+            #print('      Quantize echograms to receiver grid')
             echo2gridMap = get_echo2gridMap(echograms[ns, nr, 0], grid_dirs_rad)
 
             tempRIR = np.zeros((L_rir, nGrid, nBands))
@@ -138,11 +138,11 @@ def render_rirs_array(echograms, band_centerfreqs, fs, grids, array_irs):
                 # First step: reflections are quantized to the grid directions
                 q_echograms = quantise_echogram(echograms[ns, nr, nb], nGrid, echo2gridMap)
                 # Second step: render quantized echograms
-                print('      Rendering quantized echograms: Band ' + str(nb))
+                #print('      Rendering quantized echograms: Band ' + str(nb))
                 tempRIR[:, :, nb], _ = render_quantised(q_echograms, endtime, fs, fractional)
 
             tempRIR2 = np.zeros((L_rir + L_fbank, nGrid))
-            print('      Filtering and combining bands')
+            #print('      Filtering and combining bands')
             for ng in range(nGrid):
                 tempRIR2[:, ng] = filter_rirs(tempRIR[:, ng, :], band_centerfreqs, fs).squeeze()
 
@@ -214,12 +214,12 @@ def render_rirs_mic(echograms, band_centerfreqs, fs):
     for ns in range(nSrc):
         for nr in range(nRec):
 
-            print('Rendering echogram: Source ' + str(ns) + ' - Receiver ' + str(nr))
+            #print('Rendering echogram: Source ' + str(ns) + ' - Receiver ' + str(nr))
             tempIR = np.zeros((L_rir, nBands))
             for nb in range(nBands):
                 tempIR[:, nb] = np.squeeze(render_rirs(echograms[ns, nr, nb], endtime, fs, fractional))
 
-            print('     Filtering and combining bands')
+            #print('     Filtering and combining bands')
             rirs[:, nr, ns] = filter_rirs(tempIR, band_centerfreqs, fs).squeeze()
 
     # Fix size when using multiband
@@ -297,14 +297,14 @@ def render_rirs_sh(echograms, band_centerfreqs, fs):
     for ns in range(nSrc):
         for nr in range(nRec):
 
-            print('Rendering echogram: Source ' + str(ns) + ' - Receiver ' + str(nr))
+            #print('Rendering echogram: Source ' + str(ns) + ' - Receiver ' + str(nr))
             nSH = np.shape(echograms[ns, nr, 0].value)[1]
 
             tempIR = np.zeros((L_rir, nSH, nBands))
             for nb in range(nBands):
                 tempIR[:, :, nb] = render_rirs(echograms[ns, nr, nb], endtime, fs, fractional)
 
-            print('     Filtering and combining bands')
+            #print('     Filtering and combining bands')
             for nh in range(nSH):
                 rirs[:, nh, nr, ns] = filter_rirs(tempIR[:, nh, :], band_centerfreqs, fs).squeeze()
     

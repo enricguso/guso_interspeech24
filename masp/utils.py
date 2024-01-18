@@ -99,6 +99,7 @@ def cart2sph(cart):
     -------
     sph : ndarray
         Spherical coordinates, in radians, aed.  Dimension = (nCoords, C)
+        Output is Azimuth, Elevation, Modulus
 
     Raises
     -----

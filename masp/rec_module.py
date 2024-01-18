@@ -137,10 +137,9 @@ def rec_module_sh(echograms, sh_orders, head_orient):
                 sph = cart2sph(echograms[ns, nr].coords)
                 azi = sph[:, 0]
                 polar = np.pi / 2 - sph[:, 1]
-               ############ code added by Enric for rotating the head:
+                ############ code added by Enric for rotating the head:
                 azi += (head_orient[0] * np.pi /180)
                 polar += (head_orient[1] * np.pi / 180)
-                ###############
                 sh_gains = get_sh(int(sh_orders[nr]), np.asarray([azi, polar]).transpose(), 'real')
                 #print(sh_gains)
                 # rec_echograms[ns, nr].value = sh_gains * echograms[ns, nr].value[:,np.newaxis]

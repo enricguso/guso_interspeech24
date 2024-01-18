@@ -63,6 +63,7 @@ def compute_echograms_array(room, src, rec, abs_wall, limits):
     -------
     abs_echograms : ndarray, dtype = Echogram
         Array with rendered echograms. Dimension = (nSrc, nRec, nBands)
+        Note Y AXIS IS FLIPPED WITH RESPECT TO THE room Y axis
 
     Raises
     -----
@@ -149,6 +150,7 @@ def compute_echograms_mic(room, src, rec, abs_wall, limits, mic_specs):
     -------
     abs_echograms : ndarray, dtype = Echogram
         Array with rendered echograms. Dimension = (nSrc, nRec, nBands)
+        Note Y AXIS IS FLIPPED WITH RESPECT TO THE room Y axis
 
     Raises
     -----
@@ -202,18 +204,18 @@ def compute_echograms_mic(room, src, rec, abs_wall, limits, mic_specs):
     echograms = np.empty((nSrc, nRec), dtype=Echogram)
     for ns in range(nSrc):
         for nr in range(nRec):
-            print('Compute echogram: Source ' + str(ns) + ' - Receiver ' + str(nr))
+            #print('Compute echogram: Source ' + str(ns) + ' - Receiver ' + str(nr))
             # Compute echogram
             echograms[ns, nr] = ims_coreMtx(room, src[ns,:], rec[nr,:], type, np.max(limits))
 
-    print('Apply receiver direcitivites')
+    #print('Apply receiver direcitivites')
     rec_echograms = rec_module_mic(echograms, mic_specs)
 
     abs_echograms = np.empty((nSrc, nRec, nBands), dtype=Echogram)
     # Apply boundary absorption
     for ns in range(nSrc):
         for nr in range(nRec):
-            print('Apply absorption: Source ' + str(ns) + ' - Receiver ' + str(nr))
+            #print('Apply absorption: Source ' + str(ns) + ' - Receiver ' + str(nr))
             # Compute echogram
             abs_echograms[ns, nr] = apply_absorption(rec_echograms[ns, nr], abs_wall, limits)
 
@@ -245,6 +247,7 @@ def compute_echograms_sh(room, src, rec, abs_wall, limits, sh_orders, head_orien
     -------
     abs_echograms : ndarray, dtype = Echogram
         Array with rendered echograms. Dimension = (nSrc, nRec, nBands)
+        Note Y AXIS IS FLIPPED WITH RESPECT TO THE room Y axis
 
     Raises
     -----
@@ -296,22 +299,27 @@ def compute_echograms_sh(room, src, rec, abs_wall, limits, sh_orders, head_orien
     type = 'maxTime'
     # Compute echogram due to pure propagation (frequency-independent)
     echograms = np.empty((nSrc, nRec), dtype=Echogram)
+
     for ns in range(nSrc):
         for nr in range(nRec):
-            print('Compute echogram: Source ' + str(ns) + ' - Receiver ' + str(nr))
+            #print('Compute echogram: Source ' + str(ns) + ' - Receiver ' + str(nr))
             # Compute echogram
             echograms[ns, nr] = ims_coreMtx(room, src[ns,:], rec[nr,:], type, np.max(limits))
+            # We also compute the reciprocal echogram for obtaining the echoes' angles with respect to the source
+            # in order to apply source directivity
+            #recip_echograms[nr, ns] = ims_coreMtx(room, rec[nr,:], src[ns,:], type, np.max(limits))
 
-    print('Apply SH directivites')
+    #print('Apply SH directivites')
     rec_echograms = rec_module_sh(echograms, sh_orders, head_orient)
+
 
     abs_echograms = np.empty((nSrc, nRec, nBands), dtype=Echogram)
     # Apply boundary absorption
     for ns in range(nSrc):
         for nr in range(nRec):
-            print ('Apply absorption: Source ' + str(ns) + ' - Receiver ' + str(nr))
+            #print ('Apply absorption: Source ' + str(ns) + ' - Receiver ' + str(nr))
             # Compute echogram
             abs_echograms[ns, nr] = apply_absorption(rec_echograms[ns, nr], abs_wall, limits)
 
-    # return abs_echograms, rec_echograms, echograms
     return abs_echograms
+    #return abs_echograms

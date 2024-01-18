@@ -107,10 +107,10 @@ def ims_coreMtx(room, source, receiver, type, typeValue):
     rec[1] = w / 2 - receiver[1]
     rec[2] = receiver[2] - h / 2
 
-    if type == 'maxOrder':
+    if type is 'maxOrder':
         maxOrder = typeValue
         echogram = ims_coreN(room, src, rec, maxOrder)
-    elif type == 'maxTime':
+    elif type is 'maxTime':
         maxDelay = typeValue
         echogram = ims_coreT(room, src, rec, maxDelay)
 
