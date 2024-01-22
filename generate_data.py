@@ -259,9 +259,9 @@ def process(a):
         # Format the current time in a human-readable way
         formatted_time = current_time.strftime("%Y-%m-%d %H:%M:%S")
 
-        print('File '+str(a.id)+ ' done. ' +formatted_time)
+        print('File '+str(a.id)+ ' done. ' +formatted_time, flush=True)
     except:
-        print('ERROR when processing ' + str(a.id))
+        print('ERROR when processing ' + str(a.id), flush=True)
 
 if __name__ == '__main__':
 
