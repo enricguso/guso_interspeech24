@@ -309,11 +309,7 @@ if __name__ == '__main__':
     else:
         print('Processing the whole dataset.')
 
-    already = os.listdir(pjoin(pjoin(args.output, 'train'), 'recsourcedirectivity_right'))
-    print(str(len(already))+' files already processed.')
-    print(' ')
-    already = [int(x.split('.wav')[0]) for x in already]
-    df = df.drop(already)    
+    
     
     # make dirs
     sets = ['train', 'val', 'test']
@@ -335,6 +331,11 @@ if __name__ == '__main__':
         if not os.path.exists(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_right')):
             os.makedirs(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_right'))  
     
+    already = os.listdir(pjoin(pjoin(args.output, 'train'),'recsourcedirectivity_right'))
+    print(str(len(already))+' files already processed.')
+    print(' ')
+    already = [int(x.split('.wav')[0]) for x in already]
+    df = df.drop(already)
 
     with Pool(num_workers) as p:
         p.map(process, [df.iloc[i] for i in range(len(df))])
