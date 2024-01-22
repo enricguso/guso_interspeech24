@@ -332,6 +332,8 @@ if __name__ == '__main__':
             os.makedirs(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_right'))  
     
     already = os.listdir(pjoin(pjoin(args.output, 'train'),'recsourcedirectivity_right'))
+    already += os.listdir(pjoin(pjoin(args.output, 'val'), 'recsourcedirectivity_right'))
+    already += os.listdir(pjoin(pjoin(args.output, 'test'), 'recsourcedirectivity_right'))
     print(str(len(already))+' files already processed.')
     print(' ')
     already = [int(x.split('.wav')[0]) for x in already]
