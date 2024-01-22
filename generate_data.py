@@ -174,20 +174,19 @@ def apply_directivity(echograms, recip_echograms, sourceOrient, d, band_centerfr
 def process(a):
     #try:
     headC = np.array([a.headC_x, a.headC_y, a.headC_z])
-    headOrient = np.array([a.headOrient_azi, a.headOrient_ele])
+    headOrient = np.array([a.head_azi, a.head_ele])
     src = np.array([[a.src_x, a.src_y, a.src_z]])
-    srcOrient = np.array([a.srcOrient_azi, a.srcOrient_ele])
+    srcOrient = np.array([a.src_azi, a.src_ele])
     room = np.array([a.room_x, a.room_y, a.room_z])
     
-    rt60 = np.array([a.rt60_avg])
+    rt60 = np.array([a.rt60])
     
-    rt60s = np.array([a.rt60_125Hz, a.rt60_250Hz, a.rt60_500Hz, a.rt60_1000Hz, a.rt60_2000Hz, a.rt60_4000Hz])
+    rt60s = np.array([a.rt60_125hz, a.rt60_250hz, a.rt60_500hz, a.rt60_1000hz, a.rt60_2000hz, a.rt60_4000hz])
     #speech, fs_speech = lsa.load('ane_speech.wav', sr=fs_rir)
 
     mic = np.array(head_2_ku_ears(headC,headOrient)) # we get BiMagLS mic points 
     mic = np.vstack((mic, headC)) # we add the head center microphone for non binaural decoders
-    nRec = mic.shape[0]
-    nSrc = src.shape[0]
+
     
     abs_walls,_ = srs.find_abs_coeffs_from_rt(room, rt60s)
     
@@ -262,13 +261,18 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(
         description='Dataset Generation Argument Parser')
+    
     parser.add_argument("--output", type=str,
                     help="""Directory where to save processed wavs.""",
                     default=None)
+    
+    parser.add_argument('--workers', type=int, default=8, 
+                        help='Number of workers to be used (default is 8).')
+
     args = parser.parse_args()
 
     print('RIR dataset generation script. Interspeech2024')
-    num_workers = 1 # number of CPU cores
+    num_workers = args.workers # number of CPU cores
     output_path = args.output #'/home/ubuntu/Data/microson_v1/'
     d = load_speechdirectivity(path=pjoin('directivity_parsing_matlab', 'azel_dir.mat'), plot=False)
     band_centerfreqs = np.zeros((6))
