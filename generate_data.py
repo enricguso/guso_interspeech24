@@ -309,6 +309,12 @@ if __name__ == '__main__':
     else:
         print('Processing the whole dataset.')
 
+    already = os.listdir(pjoin(pjoin(args.output, 'train'), 'recsourcedirectivity_right'))
+    print(str(already)+' files already processed.')
+    print(' ')
+    already = [int(x.split('.wav')[0]) for x in already]
+    df = df.drop(already)    
+    
     # make dirs
     sets = ['train', 'val', 'test']
     if not os.path.exists(output_path):
