@@ -211,7 +211,7 @@ def process(a):
     
     directivity_echograms = apply_directivity(echograms, recip_echograms, srcOrient, d, band_centerfreqs)
     
-    recsrcdir_rirs = srs.render_rirs_sh(echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
+    recsrcdir_rirs = srs.render_rirs_sh(directivity_echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
     
     bin_ir_recdir = np.array([sig.fftconvolve(np.squeeze(recdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
                     sig.fftconvolve(np.squeeze(recdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
