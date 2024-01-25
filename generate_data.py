@@ -305,9 +305,10 @@ if __name__ == '__main__':
     
     print('RIR dataset generation script. Interspeech2024.')
 
-    idx = int(args.cpu * 60000/32)
+    idx = int(args.cpu * len(df)/args.workers)
     print('CPU '+ str(args.cpu))
-    df = df[idx : int(idx + 60000/32)]
+    # we select the dataset subset for that specific machine
+    df = df[idx : int(idx + len(df)/args.workers)]
     
     # make dirs
     sets = ['train', 'val', 'test']
@@ -329,6 +330,7 @@ if __name__ == '__main__':
         if not os.path.exists(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_right')):
             os.makedirs(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_right'))  
     
+    # we remove the already processed files from the queue
     already = os.listdir(pjoin(pjoin('/home/ubuntu/dataset', 'train'),'recsourcedirectivity_right'))
     already += os.listdir(pjoin(pjoin('/home/ubuntu/dataset', 'val'), 'recsourcedirectivity_right'))
     already += os.listdir(pjoin(pjoin('/home/ubuntu/dataset', 'test'), 'recsourcedirectivity_right'))
@@ -336,20 +338,12 @@ if __name__ == '__main__':
     print(' ')
     already = [int(x.split('.wav')[0]) for x in already]
     df = df.drop(already, errors='ignore')
-
+    # we shuffle
     np.random.seed()
     permu = np.random.permutation(len(df))
     for i in  range(len(df)):
         print('starting to process ', i)
         process(df.iloc[permu[i]])
-    #p.join()
-    
-    #print('Multiprocessing files processed. Starting single-thread process:')
-    # Some files can't be processed by multiprocessing (I guess it's the time-stretching library:
-    #processed_files = os.listdir(pjoin(pjoin(output_path, 'train'), 'reverberant'))
-    #processed_files = [os.path.splitext(x)[0]+'.flac' for x in processed_files]
-    #unprocessed_files = df[~df['speech_path'].isin(processed_files)]
-    #for i in range(len(unprocessed_files)):
     #     process(unprocessed_files.iloc[i])
     print(' ')
     print('All files processed. Done.')
