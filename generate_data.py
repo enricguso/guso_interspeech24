@@ -6,7 +6,6 @@ import copy
 import pandas as pd
 import os
 from os.path import join as pjoin
-from multiprocessing import Pool
 import mat73
 import scipy.signal as sig
 from multiprocessing import Pool
@@ -168,100 +167,106 @@ def apply_directivity(echograms, recip_echograms, sourceOrient, d, band_centerfr
                     factors[r] = np.power(10, d[band][ele_idxs[r], azi_idxs[r]] / 20)
                 factors = np.tile(factors, (directivity_echograms[ns,nr,bd].value.shape[1], 1)).T
                 directivity_echograms[ns, nr, bd].value *= factors
+        print('directivity applied')
     return directivity_echograms
 
 # This script encapsulated in a method for multi-processing takes a dataframe row and stores the audio on disk
 # a = df.iloc[i]
 def process(a):
-#try:
+    try:
 
-    headC = np.array([a.headC_x, a.headC_y, a.headC_z])
-    headOrient = np.array([a.head_azi, a.head_ele])
-    src = np.array([[a.src_x, a.src_y, a.src_z]])
-    srcOrient = np.array([a.src_azi, a.src_ele])
-    room = np.array([a.room_x, a.room_y, a.room_z])
-    
-    rt60 = np.array([a.rt60])
-    
-    rt60s = np.array([a.rt60_125hz, a.rt60_250hz, a.rt60_500hz, a.rt60_1000hz, a.rt60_2000hz, a.rt60_4000hz])
-    #speech, fs_speech = lsa.load('ane_speech.wav', sr=fs_rir)
+        headC = np.array([a.headC_x, a.headC_y, a.headC_z])
+        headOrient = np.array([a.head_azi, a.head_ele])
+        src = np.array([[a.src_x, a.src_y, a.src_z]])
+        srcOrient = np.array([a.src_azi, a.src_ele])
+        room = np.array([a.room_x, a.room_y, a.room_z])
+        
+        rt60 = np.array([a.rt60])
+        
+        rt60s = np.array([a.rt60_125hz, a.rt60_250hz, a.rt60_500hz, a.rt60_1000hz, a.rt60_2000hz, a.rt60_4000hz])
+        #speech, fs_speech = lsa.load('ane_speech.wav', sr=fs_rir)
+        print(rt60s)
+        mic = np.array(head_2_ku_ears(headC,headOrient)) # we get BiMagLS mic points 
+        mic = np.vstack((mic, headC)) # we add the head center microphone for non binaural decoders
 
-    mic = np.array(head_2_ku_ears(headC,headOrient)) # we get BiMagLS mic points 
-    mic = np.vstack((mic, headC)) # we add the head center microphone for non binaural decoders
+        
+        abs_walls,_ = srs.find_abs_coeffs_from_rt(room, rt60s)
+        
+        abs_walls_single, _ = srs.find_abs_coeffs_from_rt(room, rt60)
+        print('absorption')
+        limits_single = np.minimum(rt60, maxlim)
+        
+        limits = np.minimum(rt60s, maxlim)
+        print('limits', limits)
+        echograms_single = srs.compute_echograms_mic(room, src, np.array([mic[2]]), abs_walls_single, limits_single, np.array([[1,0,0,1]]))
+        print('single echogram')
+        echograms_mb = srs.compute_echograms_mic(room, src, np.array([mic[2]]), abs_walls, limits, np.array([[1,0,0,1]]))
+        print('mb echogram')
+        echograms  = srs.compute_echograms_sh(room, src, mic[0:2], abs_walls, limits, ambi_order, headOrient)
+        print('echograms')
+        recip_echograms  = srs.compute_echograms_sh(room, mic[0:2], src, abs_walls, limits, ambi_order, headOrient)
+        print('rec echograms computed')
+        directivity_echograms = apply_directivity(echograms, recip_echograms, srcOrient, d, band_centerfreqs)
+        print('src rec echograms')
+        mic_rirs_single = srs.render_rirs_mic(echograms_single, np.array([1000]), fs_rir)
+        
+        mic_rirs_mb = srs.render_rirs_mic(echograms_mb, band_centerfreqs, fs_rir)
+        
+        recdir_rirs = srs.render_rirs_sh(echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
+        
+          
+        recsrcdir_rirs = srs.render_rirs_sh(directivity_echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
+        print('SH rirs')
+        bin_ir_recdir = np.array([sig.fftconvolve(np.squeeze(recdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
+                        sig.fftconvolve(np.squeeze(recdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
+        
+        bin_ir_recsrcdir = np.array([sig.fftconvolve(np.squeeze(recsrcdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
+                        sig.fftconvolve(np.squeeze(recsrcdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
+        print('bin rirs')
+        single_max = np.max(np.abs(mic_rirs_single))
+        
+        mb_max = np.max(np.abs(mic_rirs_mb))
+        
+        recdir_max = np.max(np.abs(bin_ir_recdir))
+        
+        recsrcdir_max = np.max(np.abs(bin_ir_recsrcdir))
+        
+        oallmax = np.max((single_max, mb_max, recdir_max, recsrcdir_max))
+        
+        if oallmax >= 1.:
+            oallmax = 0.95
+        
+        mic_rirs_single /= single_max
+        mic_rirs_single *= oallmax
+        mic_rirs_mb /= mb_max
+        mic_rirs_mb *= oallmax
+        bin_ir_recdir /= recdir_max
+        bin_ir_recdir *= oallmax
+        bin_ir_recsrcdir /= recsrcdir_max
+        bin_ir_recsrcdir *= oallmax
+        print('normalized')
+        sing_path = pjoin(pjoin(pjoin(output_path, a.set), 'singleband'), "{:05d}".format(a.id) + '.wav')
+        mb_path = pjoin(pjoin(pjoin(output_path, a.set), 'multiband'), "{:05d}".format(a.id) + '.wav')
+        recleft_path = pjoin(pjoin(pjoin(output_path, a.set), 'recdirectivity_left'), "{:05d}".format(a.id) + '.wav')
+        recright_path = pjoin(pjoin(pjoin(output_path, a.set), 'recdirectivity_right'), "{:05d}".format(a.id) + '.wav')
+        recsrcleft_path = pjoin(pjoin(pjoin(output_path, a.set), 'recsourcedirectivity_left'), "{:05d}".format(a.id) + '.wav')
+        recsrcright_path = pjoin(pjoin(pjoin(output_path, a.set), 'recsourcedirectivity_right'), "{:05d}".format(a.id) + '.wav')
 
-    
-    abs_walls,_ = srs.find_abs_coeffs_from_rt(room, rt60s)
-    
-    abs_walls_single, _ = srs.find_abs_coeffs_from_rt(room, rt60)
-    
-    limits_single = np.minimum(rt60, maxlim)
-    
-    limits = np.minimum(rt60s, maxlim)
-    
-    echograms_single = srs.compute_echograms_mic(room, src, np.array([mic[2]]), abs_walls_single, limits_single, np.array([[1,0,0,1]]))
-    echograms_mb = srs.compute_echograms_mic(room, src, np.array([mic[2]]), abs_walls, limits, np.array([[1,0,0,1]]))
-    echograms  = srs.compute_echograms_sh(room, src, mic[0:2], abs_walls, limits, ambi_order, headOrient)
-    recip_echograms  = srs.compute_echograms_sh(room, mic[0:2], src, abs_walls, limits, ambi_order, headOrient)
-    
-    mic_rirs_single = srs.render_rirs_mic(echograms_single, np.array([1000]), fs_rir)
-    
-    mic_rirs_mb = srs.render_rirs_mic(echograms_mb, band_centerfreqs, fs_rir)
-    
-    recdir_rirs = srs.render_rirs_sh(echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
-    
-    directivity_echograms = apply_directivity(echograms, recip_echograms, srcOrient, d, band_centerfreqs)
-    
-    recsrcdir_rirs = srs.render_rirs_sh(directivity_echograms, band_centerfreqs, fs_rir)#/np.sqrt(4*np.pi)
-    
-    bin_ir_recdir = np.array([sig.fftconvolve(np.squeeze(recdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
-                    sig.fftconvolve(np.squeeze(recdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
-    
-    bin_ir_recsrcdir = np.array([sig.fftconvolve(np.squeeze(recsrcdir_rirs[:,:,0, 0]), decoder[:,:,0], 'full', 0).sum(1),
-                    sig.fftconvolve(np.squeeze(recsrcdir_rirs[:,:,1, 0]), decoder[:,:,1], 'full', 0).sum(1)])
-    
-    single_max = np.max(np.abs(mic_rirs_single))
-    
-    mb_max = np.max(np.abs(mic_rirs_mb))
-    
-    recdir_max = np.max(np.abs(bin_ir_recdir))
-    
-    recsrcdir_max = np.max(np.abs(bin_ir_recsrcdir))
-    
-    oallmax = np.max((single_max, mb_max, recdir_max, recsrcdir_max))
-    
-    if oallmax >= 1.:
-        oallmax = 0.95
-    
-    mic_rirs_single /= single_max
-    mic_rirs_single *= oallmax
-    mic_rirs_mb /= mb_max
-    mic_rirs_mb *= oallmax
-    bin_ir_recdir /= recdir_max
-    bin_ir_recdir *= oallmax
-    bin_ir_recsrcdir /= recsrcdir_max
-    bin_ir_recsrcdir *= oallmax
+        sf.write(sing_path, mic_rirs_single[:,0,0], fs_rir, subtype='FLOAT')   
+        sf.write(mb_path, mic_rirs_mb[:,0,0], fs_rir, subtype='FLOAT')    
+        sf.write(recleft_path, bin_ir_recdir[0], fs_rir, subtype='FLOAT')    
+        sf.write(recright_path, bin_ir_recdir[1], fs_rir, subtype='FLOAT')    
+        sf.write(recsrcleft_path, bin_ir_recsrcdir[0], fs_rir, subtype='FLOAT')    
+        sf.write(recsrcright_path, bin_ir_recsrcdir[1], fs_rir, subtype='FLOAT')    
+        print('written')
+        current_time = datetime.now()
+        # Format the current time in a human-readable way
+        formatted_time = current_time.strftime("%Y-%m-%d %H:%M:%S")
 
-    sing_path = pjoin(pjoin(pjoin(output_path, a.set), 'singleband'), "{:05d}".format(a.id) + '.wav')
-    mb_path = pjoin(pjoin(pjoin(output_path, a.set), 'multiband'), "{:05d}".format(a.id) + '.wav')
-    recleft_path = pjoin(pjoin(pjoin(output_path, a.set), 'recdirectivity_left'), "{:05d}".format(a.id) + '.wav')
-    recright_path = pjoin(pjoin(pjoin(output_path, a.set), 'recdirectivity_right'), "{:05d}".format(a.id) + '.wav')
-    recsrcleft_path = pjoin(pjoin(pjoin(output_path, a.set), 'recsourcedirectivity_left'), "{:05d}".format(a.id) + '.wav')
-    recsrcright_path = pjoin(pjoin(pjoin(output_path, a.set), 'recsourcedirectivity_right'), "{:05d}".format(a.id) + '.wav')
-
-    sf.write(sing_path, mic_rirs_single[:,0,0], fs_rir, subtype='FLOAT')   
-    sf.write(mb_path, mic_rirs_mb[:,0,0], fs_rir, subtype='FLOAT')    
-    sf.write(recleft_path, bin_ir_recdir[0], fs_rir, subtype='FLOAT')    
-    sf.write(recright_path, bin_ir_recdir[1], fs_rir, subtype='FLOAT')    
-    sf.write(recsrcleft_path, bin_ir_recsrcdir[0], fs_rir, subtype='FLOAT')    
-    sf.write(recsrcright_path, bin_ir_recsrcdir[1], fs_rir, subtype='FLOAT')    
-
-    current_time = datetime.now()
-    # Format the current time in a human-readable way
-    formatted_time = current_time.strftime("%Y-%m-%d %H:%M:%S")
-
-    print('File '+str(a.id)+ ' done. ' +formatted_time, flush=True)
-    #except:
-    #    print('ERROR when processing ' + str(a.id), flush=True)
+        print('File '+str(a.id)+ ' done. ' +formatted_time)
+        print(' ')
+    except:
+        print('ERROR when processing ' + str(a.id))
 
 if __name__ == '__main__':
 
@@ -275,8 +280,8 @@ if __name__ == '__main__':
     parser.add_argument('--workers', type=int, default=8, 
                         help='Number of workers to be used (default is 8).')
     
-    parser.add_argument('--half', type=int, default=0, 
-                        help='Which half are we processing in this machine (default is 0, no split).')
+    parser.add_argument('--cpu', type=int, default=0, 
+                        help='Which CPU are we running')
     
     args = parser.parse_args()
 
@@ -300,16 +305,9 @@ if __name__ == '__main__':
     
     print('RIR dataset generation script. Interspeech2024.')
 
-    if args.half == 1:
-        print('Processing half 1.')
-        df = df[:30000]
-    elif args.half == 2:
-        print('Processing half 2.')
-        df = df[30000:]
-    else:
-        print('Processing the whole dataset.')
-
-    
+    idx = int(args.cpu * 60000/32)
+    print('CPU '+ str(args.cpu))
+    df = df[idx : int(idx + 60000/32)]
     
     # make dirs
     sets = ['train', 'val', 'test']
@@ -331,18 +329,21 @@ if __name__ == '__main__':
         if not os.path.exists(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_right')):
             os.makedirs(pjoin(pjoin(output_path, subset), 'recsourcedirectivity_right'))  
     
-    already = os.listdir(pjoin(pjoin(args.output, 'train'),'recsourcedirectivity_right'))
-    already += os.listdir(pjoin(pjoin(args.output, 'val'), 'recsourcedirectivity_right'))
-    already += os.listdir(pjoin(pjoin(args.output, 'test'), 'recsourcedirectivity_right'))
+    already = os.listdir(pjoin(pjoin('/home/ubuntu/dataset', 'train'),'recsourcedirectivity_right'))
+    already += os.listdir(pjoin(pjoin('/home/ubuntu/dataset', 'val'), 'recsourcedirectivity_right'))
+    already += os.listdir(pjoin(pjoin('/home/ubuntu/dataset', 'test'), 'recsourcedirectivity_right'))
     print(str(len(already))+' files already processed.')
     print(' ')
     already = [int(x.split('.wav')[0]) for x in already]
-    df = df.drop(already)
+    df = df.drop(already, errors='ignore')
 
-    with Pool(num_workers) as p:
-       p.map(process, [df.iloc[i] for i in range(len(df))])
-    p.close()
+    np.random.seed()
+    permu = np.random.permutation(len(df))
+    for i in  range(len(df)):
+        print('starting to process ', i)
+        process(df.iloc[permu[i]])
     #p.join()
+    
     #print('Multiprocessing files processed. Starting single-thread process:')
     # Some files can't be processed by multiprocessing (I guess it's the time-stretching library:
     #processed_files = os.listdir(pjoin(pjoin(output_path, 'train'), 'reverberant'))
