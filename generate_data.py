@@ -8,7 +8,7 @@ import os
 from os.path import join as pjoin
 import mat73
 import scipy.signal as sig
-from multiprocessing import Pool
+#from multiprocessing import Pool
 import argparse 
 from datetime import datetime
 
