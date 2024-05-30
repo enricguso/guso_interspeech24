@@ -231,8 +231,9 @@ for rir_path in rir_paths:
 if __name__ == '__main__':
     FS = 48000
     DURATION = 4 #time in seconds of the eval chunk
-    TRAINRIR_NAMES = {'D00_DNS5': 'DNS5', 'D01_sb_none_NH_mono': 'singleband' , 'D02_mb_none_NH_mono': 'multiband', 
-                'D03_mb_rec_NH_left': 'recdirectivity', 'D05_mb_srcrec_NH_left': 'recsourcedirectivity'}
+    TRAINRIR_NAMES = {'D01_sb_none_NH_mono': 'singleband' , 'D02_mb_none_NH_mono': 'multiband', 
+                'D03_mb_rec_NH_left': 'recdirectivity', 'D05_mb_srcrec_NH_left': 'recsourcedirectivity',
+                'D00_DNS5': 'DNS5'}
 
     use_gpu = True
     if torch.cuda.is_available() and use_gpu:
@@ -240,7 +241,7 @@ if __name__ == '__main__':
     else:
         TORCH_DEVICE = "cpu"
 
-    batch_size = 64
+    batch_size = 1
     num_workers = 8
     reverberant_noises = True
     speech_path = '/home/ubuntu/Data/DFN/textfiles/test_set.txt'
@@ -273,8 +274,8 @@ if __name__ == '__main__':
     sisdr_single = M.ScaleInvariantSignalDistortionRatio().to(TORCH_DEVICE)
     srmr_single = M.SpeechReverberationModulationEnergyRatio(FS).to(TORCH_DEVICE)
 
-    for rir_path in rir_paths:
-        for model_name in model_names:
+    for rir_path in rir_paths: #for each set of eval RIRs
+        for model_name in model_names: #for each model (or set of training RIRs)
             df = pd.DataFrame(columns=['train_rirs', 'eval_rirs', 'model', 'speech', 'noise', 'rir', 'noisy_snr', 'sisdri',
                                 'pesq', 'stoi', 'srmr', 'ovrl_mos', 'sig_mos', 'bak_mos', 'p808_mos'])
             model_path = pjoin('/home/ubuntu/Data/DFN', model_name)
@@ -282,34 +283,67 @@ if __name__ == '__main__':
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=True) 
             model, df_state, _ = init_df(model_path)
             
-            print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Running evaluation of '+TRAINRIR_NAMES[model_name]+' model evaluated on '+
-                rir_path.split('/')[-1].split('_')[0]+' RIRs...')
+            print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Running evaluation of '+model_name+' evaluated on '+
+                rir_path.split('/')[-1].split('_')[0]+'RIRs ...')
             for noisy, clean, meta in tqdm.tqdm(dataloader):
-                enhanced = enhance(model, df_state, noisy)
-                
-                # first the CPU metrics
+                try:
+                    enhanced = enhance(model, df_state, noisy)
+                except:
+                    print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Error while enhancing '+os.path.join(*meta[0][0].split('/')[6:]))
+
                 downsampler = downsampler.to('cpu')
                 ds_enhanced = downsampler(enhanced)
-                dnsmos_results = []
-                for x in ds_enhanced:
-                    j = x.numpy()
-                    clips = np.max(np.abs(j))
-                    if clips > 1.:
-                        j /= clips
-                    dnsmos_results.append(dnsmos.run(j, 16000))
-
+                didx = len(df)
+                for i in range(batch_size):
+                    df.loc[didx+i, 'train_rirs'] = TRAINRIR_NAMES[model_name]
+                    df.loc[didx+i, 'eval_rirs'] = rir_path.split('/')[-1].split('_')[0]
+                    df.loc[didx+i, 'model'] = model_name
+                    df.loc[didx+i, 'speech'] = os.path.join(*meta[0][i].split('/')[6:])
+                    df.loc[didx+i, 'noise'] = os.path.join(*meta[1][i].split('/')[6:])
+                    df.loc[didx+i, 'rir'] = os.path.join(*meta[2][i].split('/')[4:])
+                    df.loc[didx+i, 'noisy_snr'] = meta[3][i].item()
+                    try:
+                        # first the CPU metrics
+                        dnsmos_result = dnsmos.run(ds_enhanced[i].numpy(), 16000) 
+                        df.loc[didx+i, 'ovrl_mos'] = dnsmos_result['ovrl_mos']
+                        df.loc[didx+i, 'sig_mos'] = dnsmos_result['sig_mos']
+                        df.loc[didx+i, 'bak_mos'] = dnsmos_result['bak_mos']
+                        df.loc[didx+i, 'p808_mos'] = dnsmos_result['p808_mos']
+                    except:
+                        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Error getting DNSMOS of '+os.path.join(*meta[0][i].split('/')[6:])+'_'+rir_path+'_'+model_name)
+                        df.loc[didx+i, 'ovrl_mos'] = np.NAN
+                        df.loc[didx+i, 'sig_mos'] = np.NAN
+                        df.loc[didx+i, 'bak_mos'] = np.NAN
+                        df.loc[didx+i, 'p808_mos'] = np.NAN   
                 # then to GPU
                 ds_enhanced.to(TORCH_DEVICE)
                 noisy = noisy.to(TORCH_DEVICE)
                 clean = clean.to(TORCH_DEVICE)
                 enhanced = enhanced.to(TORCH_DEVICE)
                 downsampler_gpu = downsampler.to(TORCH_DEVICE)
-                pesq = [pesq_single(x, y).item() for x,y in zip(ds_enhanced, downsampler_gpu(clean))]
-                stoi = [stoi_single(x, y).item() for x,y in zip(enhanced, clean)]
-                sisdr_final = [sisdr_single(x, y).item() for x,y in zip(enhanced, clean)]
-                sisdr_original = [sisdr_single(x, y).item() for x,y in zip(noisy, clean)]
-                sisdri = np.array(sisdr_final) - np.array(sisdr_original)
-                srmr = [srmr_single(x).item() for x in enhanced]
-                df = add_batch_results(meta, pesq, stoi, sisdri, srmr, dnsmos_results, model_name, batch_size, df)
+                for i in range(batch_size):
+                    try:
+                        sisdr_final = sisdr_single(enhanced[i], clean[i]).item() 
+                        sisdr_original = sisdr_single(noisy[i], clean[i]).item() 
+                        sisdri = sisdr_final - sisdr_original
+                    except:
+                        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Error getting SISDR of '+os.path.join(*meta[0][i].split('/')[6:])+'_'+rir_path+'_'+model_name)                    
+                        sisdri = np.NAN
+                    df.loc[didx+i, 'sisdri'] = sisdri
+                    try:
+                        df.loc[didx+i, 'pesq'] = pesq_single(ds_enhanced[i], downsampler_gpu(clean[i])).item()
+                    except:
+                        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Error getting PESQ of '+os.path.join(*meta[0][i].split('/')[6:])+'_'+rir_path+'_'+model_name)
+                        df.loc[didx+i, 'pesq'] = np.NAN
+                    try:
+                        df.loc[didx+i, 'stoi'] = stoi_single(enhanced[i], clean[i]).item()
+                    except:
+                        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Error getting STOI of '+os.path.join(*meta[0][i].split('/')[6:])+'_'+rir_path+'_'+model_name)                    
+                        df.loc[didx+i, 'stoi'] = np.NAN
+                    try:
+                        df.loc[didx+i, 'srmr'] = srmr_single(enhanced[i]).item()
+                    except:
+                        df.loc[didx+i, 'srmr'] = np.NAN
+                        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Error getting SRMR of '+os.path.join(*meta[0][i].split('/')[6:])+'_'+rir_path+'_'+model_name)
             df.to_csv(pjoin(results_path, model_name+'_evaluatedOn_'+rir_path.split('/')[-1].split('_')[0]), index=False)
             print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Done.')
