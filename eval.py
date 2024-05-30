@@ -240,7 +240,7 @@ if __name__ == '__main__':
     else:
         TORCH_DEVICE = "cpu"
 
-    batch_size = 32
+    batch_size = 64
     num_workers = 8
     reverberant_noises = True
     speech_path = '/home/ubuntu/Data/DFN/textfiles/test_set.txt'
@@ -282,7 +282,7 @@ if __name__ == '__main__':
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=True) 
             model, df_state, _ = init_df(model_path)
             
-            print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Running evaluation of '+TRAINRIR_NAMES[model_name]+'model evaluated on '+
+            print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+' || Running evaluation of '+TRAINRIR_NAMES[model_name]+' model evaluated on '+
                 rir_path.split('/')[-1].split('_')[0]+' RIRs...')
             for noisy, clean, meta in tqdm.tqdm(dataloader):
                 enhanced = enhance(model, df_state, noisy)
@@ -290,7 +290,14 @@ if __name__ == '__main__':
                 # first the CPU metrics
                 downsampler = downsampler.to('cpu')
                 ds_enhanced = downsampler(enhanced)
-                dnsmos_results = [dnsmos.run(x.numpy(), 16000) for x in ds_enhanced]
+                dnsmos_results = []
+                for x in ds_enhanced:
+                    j = x.numpy()
+                    clips = np.max(np.abs(j))
+                    if clips > 1.:
+                        j /= clips
+                    dnsmos_results.append(dnsmos.run(j, 16000))
+
                 # then to GPU
                 ds_enhanced.to(TORCH_DEVICE)
                 noisy = noisy.to(TORCH_DEVICE)
